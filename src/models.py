@@ -79,22 +79,16 @@ def build_cnn(input_shape):
     model = Model(inputs=inputs, outputs=outputs, name="feature_ranking_cnn")
     return model
 
-"""
-AutoEncoder Mimarisi: 
-Input → Encoder → Bottleneck → Decoder → Output
-"""
-def build_autoencoder(input_dim=30, encoding_dim=8): #boyutu 30’dan 8’e düşürür
+
+def build_autoencoder(input_dim=30, encoding_dim=8):
     """
+    Input→Encoder→Bottleneck→Decoder→Reconstruction
     Tablosal veri için dense autoencoder modeli oluşturur.
-    Geriye:
-    - autoencoder modeli
-    - encoder modeli
-    döndürür.
     """
     input_layer = Input(shape=(input_dim,), name="input_layer")
 
     # Encoder
-    encoded = Dense(16, activation="relu", name="encoder_dense_1")(input_layer) #Veriyi 30’dan 16’ya indiriyor.
+    encoded = Dense(16, activation="relu", name="encoder_dense_1")(input_layer)
     bottleneck = Dense(encoding_dim, activation="relu", name="bottleneck")(encoded)
 
     # Decoder
@@ -110,6 +104,5 @@ def build_autoencoder(input_dim=30, encoding_dim=8): #boyutu 30’dan 8’e dü�
     )
 
     return autoencoder, encoder
-
 
 __all__ = ["build_baseline_model", "build_cnn", "build_autoencoder"]

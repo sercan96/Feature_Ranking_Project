@@ -33,3 +33,41 @@ CNN Çalışma Sistemi :
 
     Bu projede önce veriyi yükleyip CNN modelini kurduk. Model, birden fazla convolution katmanı kullanarak sınıflandırma problemini öğrendi. Eğitim tamamlandıktan sonra feature importance’ı activations’tan değil, doğrudan ilk convolution katmanının kernel ağırlıklarından çıkardık. İlk conv katmanının kernel matrisi feature × filter biçiminde tabloya dönüştürüldü. Ardından her feature için filtreler arasındaki maksimum ve ortalama mutlak ağırlık hesaplandı. Bu skorlar kullanılarak feature’lar büyükten küçüğe sıralandı ve feature ranking dosyaları oluşturuldu.
 
+AutoEncoder Çalışma Mantığı :
+
+    Input→Encoder→Bottleneck→Decoder→Reconstruction
+
+    Input: orijinal feature vektörü
+    Encoder: veriyi daha küçük temsile indirir
+    Bottleneck: sıkıştırılmış özet temsil
+    Decoder: bu özeti kullanıp giriş veriyi tekrar üretmeye çalışır
+
+    Örnek:
+        girişte 30 feature var
+        encoder bunu 16’ya indirir
+        sonra 8’e indirir
+        decoder tekrar 16’ya çıkarır
+        sonra yeniden 30 feature üretir
+
+    Burada modelin amacı sınıf tahmini değil,input’u yeniden üretmek
+
+FARKI (CNN - AUTOENCODER)
+    CNN
+        supervised
+        sınıflandırma öğrenir
+        label kullanır
+        ranking, sınıf ayırmaya katkı açısından yorumlanabilir
+
+    Autoencoder
+        unsupervised
+        yeniden üretim öğrenir
+        label kullanmaz
+        ranking, veri yapısını temsil etme açısından yorumlanabilir
+
+Bu çok önemli. Çünkü Autoencoder ranking’i şu anlama gelir:
+
+    “Bu feature verinin yapısını yeniden kurmak için ne kadar önemli?”
+
+CNN ranking’i ise daha çok şunu söyler:
+
+    “Bu feature sınıflandırma için ne kadar etkili?

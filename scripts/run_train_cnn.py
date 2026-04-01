@@ -48,6 +48,7 @@ def save_first_conv_kernels(model, output_dir, layer_name="feature_conv"):
     print(weights.shape)
 
     # Beklenen şekil: (n_features, 1, n_filters)
+    # Gereksiz verileri kaldırıyor.
     squeezed_weights = np.squeeze(weights)
 
     print("\n--- First Conv Squeezed Kernel Shape ---")

@@ -1,120 +1,188 @@
-import sys
 import os
+import sys
+import numpy as np
+import pandas as pd
 
-# Add the project directory to sys.path
+# Proje kökünü path'e ekle
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-from sklearn.linear_model import LogisticRegression
+from tensorflow.keras.callbacks import EarlyStopping
 
 from src.data_loader import load_data
 from src.preprocessing import preprocess_data
-from src.models import build_autoencoder
-from src.evaluate import (
-    evaluate_classification_model,
-    save_metrics,
-    plot_confusion_matrix,
-    plot_roc_curve,
-)
 from src.config import AUTOENCODER_MODEL_DIR
 from src.utils import ensure_dir, save_json
+from src.models import build_autoencoder
+
+
+def extract_feature_scores_from_first_encoder(autoencoder, layer_name="encoder_dense_1"):
+    """
+    İlk encoder dense katmanının genel weight özetini çıkarır.
+    """
+    encoder_layer = autoencoder.get_layer(layer_name)
+    weights, bias = encoder_layer.get_weights()
+
+    abs_weights = np.abs(weights)
+
+    weight_max_score = float(np.max(abs_weights))
+    weight_avg_score = float(np.mean(abs_weights))
+
+    return {
+        "raw_weights_shape": list(weights.shape),
+        "global_weight_max": weight_max_score,
+        "global_weight_avg": weight_avg_score
+    }
+
+
+def save_first_encoder_weights(autoencoder, output_dir, layer_name="encoder_dense_1"):
+    """
+    İlk encoder katmanının ağırlıklarını tablo halinde kaydeder.
+    Ayrıca feature başına MAX ve AVG weight skorlarını üretir.
+    """
+    encoder_layer = autoencoder.get_layer(layer_name)
+    weights, bias = encoder_layer.get_weights()
+
+    print("\n--- First Encoder Raw Weight Shape ---")
+    print(weights.shape)
+
+    # Beklenen şekil: (n_features, n_hidden)
+    df_weights = pd.DataFrame(
+        weights,
+        index=[f"F{i+1}" for i in range(weights.shape[0])],
+        columns=[f"Neuron{j+1}" for j in range(weights.shape[1])]
+    )
+
+    weights_csv_path = output_dir / "autoencoder_first_encoder_weights.csv"
+    df_weights.to_csv(weights_csv_path)
+
+    print("\n--- First Encoder Weights (ilk 10 feature) ---")
+    print(df_weights.head(10).to_string())
+
+    abs_weights = np.abs(weights)
+
+    feature_max_from_weights = np.max(abs_weights, axis=1)
+    feature_avg_from_weights = np.mean(abs_weights, axis=1)
+
+    features = [f"F{i+1}" for i in range(len(feature_avg_from_weights))]
+
+    df_max_scores = pd.DataFrame({
+        "feature": features,
+        "max_weight_score": feature_max_from_weights
+    }).sort_values(by="max_weight_score", ascending=False).reset_index(drop=True)
+
+    df_avg_scores = pd.DataFrame({
+        "feature": features,
+        "avg_weight_score": feature_avg_from_weights
+    }).sort_values(by="avg_weight_score", ascending=False).reset_index(drop=True)
+
+    df_max_scores.to_csv(output_dir / "autoencoder_feature_weight_ranking_max.csv", index=False)
+    df_avg_scores.to_csv(output_dir / "autoencoder_feature_weight_ranking_avg.csv", index=False)
+
+    print("\n--- Feature Weight Scores (MAX'e göre sıralı, ilk 10) ---")
+    print(df_max_scores.head(10).to_string(index=False))
+
+    print("\n--- Feature Weight Scores (AVG'ye göre sıralı, ilk 10) ---")
+    print(df_avg_scores.head(10).to_string(index=False))
+
+    return df_weights, df_max_scores, df_avg_scores
+
 
 def main():
-    # 1. Veriyi yükle
-    df = load_data()
+    # 1. Veri yükleme
+    df = load_data("breast_cancer_data.csv")
 
     # 2. Preprocessing
     processed = preprocess_data(df)
 
-    X_train = processed["X_train_scaled"]
-    X_test = processed["X_test_scaled"]
-    y_train = processed["y_train"]
-    y_test = processed["y_test"]
+    # Autoencoder için düz (2D) veri lazım
+    X_train = processed["X_train"]
+    X_test = processed["X_test"]
 
-    # 3. Klasör oluştur
+    print("X_train shape:", X_train.shape)
+    print("X_test shape :", X_test.shape)
+    print("Train sample sayısı:", X_train.shape[0])
+    print("Test sample sayısı :", X_test.shape[0])
+    print("Feature sayısı     :", X_train.shape[1])
+
+    # 3. Klasörü garanti et
     ensure_dir(AUTOENCODER_MODEL_DIR)
 
-    # 4. Autoencoder ve encoder oluştur
+    # 4. Modeli oluştur
     autoencoder, encoder = build_autoencoder(
         input_dim=X_train.shape[1],
         encoding_dim=8
     )
 
-    print("\n--- Autoencoder Summary ---")
+    print("\n--- Autoencoder Model Summary ---")
     autoencoder.summary()
 
-    print("\n--- Encoder Summary ---")
-    encoder.summary()
-
-    # 5. Callback'ler
+    # 5. Callback
     early_stopping = EarlyStopping(
         monitor="val_loss",
         patience=10,
         restore_best_weights=True
     )
 
-    checkpoint = ModelCheckpoint(
-        filepath=str(AUTOENCODER_MODEL_DIR / "autoencoder_best.weights.h5"),
-        monitor="val_loss",
-        save_best_only=True,
-        save_weights_only=True,
-        verbose=1
-    )
-
-    # 6. Autoencoder eğitimi
+    # 6. Eğit
     history = autoencoder.fit(
-        X_train,
+        X_train, #input ve target aynı çünkü autoencoder
         X_train,
         validation_split=0.2,
-        epochs=100,
+        epochs=50,
         batch_size=16,
-        callbacks=[early_stopping, checkpoint],
+        callbacks=[early_stopping],
         verbose=1
     )
 
-    # 7. Eğitim geçmişi kaydet
+    # 7. Eğitim geçmişini kaydet
     save_json(history.history, AUTOENCODER_MODEL_DIR / "autoencoder_history.json")
 
-    # 8. Modelleri kaydet
-    autoencoder.save(AUTOENCODER_MODEL_DIR / "autoencoder_full.keras")
-    encoder.save(AUTOENCODER_MODEL_DIR / "encoder_full.keras")
+    best_val_loss = min(history.history["val_loss"])
+    best_epoch = history.history["val_loss"].index(best_val_loss) + 1
 
-    # 9. Encoder çıktıları üret
-    X_train_encoded = encoder.predict(X_train)
-    X_test_encoded = encoder.predict(X_test)
+    best_info = {
+        "best_epoch": int(best_epoch),
+        "best_val_loss": float(best_val_loss),
+        "final_train_loss": float(history.history["loss"][-1]),
+        "final_val_loss": float(history.history["val_loss"][-1]),
+    }
+    save_json(best_info, AUTOENCODER_MODEL_DIR / "autoencoder_best_info.json")
 
-    print("\n--- Encoded Train Shape ---")
-    print(X_train_encoded.shape)
+    # 8. Modeli kaydet
+    autoencoder.save(AUTOENCODER_MODEL_DIR / "autoencoder_model_full.keras")
+    encoder.save(AUTOENCODER_MODEL_DIR / "encoder_model_full.keras")
 
-    print("\n--- Encoded Test Shape ---")
-    print(X_test_encoded.shape)
-
-    # 10. Encoded verilerle classifier eğit
-    classifier = LogisticRegression(
-        random_state=42,
-        max_iter=1000
+    # 9. İlk encoder katman genel weight özeti
+    weight_summary = extract_feature_scores_from_first_encoder(
+        autoencoder,
+        layer_name="encoder_dense_1"
     )
-    classifier.fit(X_train_encoded, y_train)
+    save_json(weight_summary, AUTOENCODER_MODEL_DIR / "autoencoder_first_encoder_weight_summary.json")
 
-    # 11. Değerlendirme
-    metrics, y_pred, y_prob = evaluate_classification_model(
-        model=classifier,
-        X_test=X_test_encoded,
-        y_test=y_test,
-        model_name="autoencoder_logistic_regression"
+    # 10. İlk encoder ağırlıklarını kaydet ve ranking çıkar
+    weight_df, weight_max_df, weight_avg_df = save_first_encoder_weights(
+        autoencoder,
+        AUTOENCODER_MODEL_DIR,
+        layer_name="encoder_dense_1"
     )
 
-    # 12. Sonuçları kaydet
-    save_metrics(metrics, "autoencoder_logistic_regression_metrics.json")
-    plot_confusion_matrix(y_test, y_pred, model_name="autoencoder_logistic_regression")
-    plot_roc_curve(y_test, y_prob, model_name="autoencoder_logistic_regression")
+    print("\n--- Top 10 Features (Encoder MAX Weight) ---")
+    print(weight_max_df.head(10).to_string(index=False))
 
-    print("\n--- Autoencoder + Logistic Regression Metrics ---")
-    for key, value in metrics.items():
-        print(f"{key}: {value:.4f}")
+    print("\n--- Top 10 Features (Encoder AVG Weight) ---")
+    print(weight_avg_df.head(10).to_string(index=False))
 
-    print("\nAutoencoder eğitildi, encoder çıkarıldı ve classifier değerlendirildi.")
-    #print("\n Feature Sıralaması : " + )
+    feature_order_max = " > ".join(weight_max_df["feature"].tolist())
+    feature_order_avg = " > ".join(weight_avg_df["feature"].tolist())
+
+    print("\nFeature Max Weight Ranking:")
+    print(feature_order_max)
+
+    print("\nFeature Avg Weight Ranking:")
+    print(feature_order_avg)
+
+    print("\nAutoencoder modeli eğitildi ve weight tabanlı feature ranking dosyaları oluşturuldu.")
+
 
 if __name__ == "__main__":
     main()
