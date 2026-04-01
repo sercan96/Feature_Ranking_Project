@@ -22,6 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 RAW_DATA_PATH = BASE_DIR / "data" / "raw" / "breast_cancer_data.csv"
 PROCESSED_DATA_DIR = BASE_DIR / "data" / "processed"
 
+
 # Model kayıt yolları
 CNN_MODEL_DIR = BASE_DIR / "models" / "cnn"
 AUTOENCODER_MODEL_DIR = BASE_DIR / "models" / "autoencoder"
@@ -46,3 +47,7 @@ BASELINE_MODEL_DIR = BASE_DIR / "models" / "baseline"
 BASELINE_MODEL_DIR = BASE_DIR / "models" / "baseline"
 CNN_MODEL_DIR = BASE_DIR / "models" / "cnn"
 AUTOENCODER_MODEL_DIR = BASE_DIR / "models" / "autoencoder"
+
+def get_raw_data_path(dataset_name: str = "breast_cancer_data.csv") -> Path:
+    """Verilen veri seti ismine göre raw klasöründeki tam yolu döndürür."""
+    return BASE_DIR / "data" / "raw" / dataset_name

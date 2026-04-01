@@ -16,6 +16,10 @@ seaborn → veri görselleştirme
 openpyxl → Excel dosyasını okumak için
 tensorflow → CNN ve autoencoder modeli için
 
+
+Amacımız : Bir veri setindeki feature’ların hangilerinin daha önemli olduğunu CNN veya Autoencoder kullanarak bulmak ve bunları sıralamak.
+
+
 CNN Çalışma Sistemi :
     Modeli eğitmek için çok katmanlı bir CNN yapısı kullandık. İlk katman feature’ları tek tek işlerken, sonraki katmanlar feature’lar arasındaki ilişkileri ve daha karmaşık pattern’leri öğrenir.
 
@@ -24,4 +28,8 @@ CNN Çalışma Sistemi :
     Ancak feature ranking yaparken tüm katmanlara bakmayız. Çünkü derin katmanlarda feature’lar karışır ve yorumlanamaz hale gelir.
 
     Bu yüzden sadece ilk katmanın aktivasyonlarını kullanarak, hangi feature’ın daha güçlü sinyal ürettiğini ölçer ve buna göre sıralama yaparız.
+
+    Tüm katmanlar öğrenme sürecine katkı verir, ancak feature importance doğrudan ilk katmandan çıkarılır.
+
+    Bu projede önce veriyi yükleyip CNN modelini kurduk. Model, birden fazla convolution katmanı kullanarak sınıflandırma problemini öğrendi. Eğitim tamamlandıktan sonra feature importance’ı activations’tan değil, doğrudan ilk convolution katmanının kernel ağırlıklarından çıkardık. İlk conv katmanının kernel matrisi feature × filter biçiminde tabloya dönüştürüldü. Ardından her feature için filtreler arasındaki maksimum ve ortalama mutlak ağırlık hesaplandı. Bu skorlar kullanılarak feature’lar büyükten küçüğe sıralandı ve feature ranking dosyaları oluşturuldu.
 

@@ -2,14 +2,14 @@
 """
 
 import pandas as pd
-from src.config import RAW_DATA_PATH
+from src.config import get_raw_data_path
 
 
-def load_data() -> pd.DataFrame:
+def load_data(dataset_name: str = "breast_cancer_data.csv") -> pd.DataFrame:
     """
     Excel dosyasından breast cancer veri setini yükler. 
     """
-    df = pd.read_csv(RAW_DATA_PATH)
+    df = pd.read_csv(get_raw_data_path(dataset_name))
     return df
 
 

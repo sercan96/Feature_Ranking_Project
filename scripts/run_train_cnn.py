@@ -14,7 +14,7 @@ from src.preprocessing import preprocess_data
 from src.evaluate import evaluate_classification_model
 from src.config import CNN_MODEL_DIR
 from src.utils import ensure_dir, save_json
-from src.models import build_feature_ranking_cnn
+from src.models import build_cnn
 
 
 def extract_feature_scores_from_first_conv(model, layer_name="feature_conv"):
@@ -103,7 +103,7 @@ def save_first_conv_kernels(model, output_dir, layer_name="feature_conv"):
 
 def main():
     # 1. Veri yükleme
-    df = load_data()
+    df = load_data("breast_cancer_data.csv")
 
     # 2. Preprocessing
     processed = preprocess_data(df)
@@ -124,7 +124,7 @@ def main():
     ensure_dir(CNN_MODEL_DIR)
 
     # 4. Modeli oluştur
-    model = build_feature_ranking_cnn(
+    model = build_cnn(
         input_shape=(X_train.shape[1], X_train.shape[2])
     )
 
