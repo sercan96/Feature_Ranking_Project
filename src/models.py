@@ -105,4 +105,5 @@ def build_autoencoder(input_dim=30, encoding_dim=8):
 
     return autoencoder, encoder
 
+
 __all__ = ["build_baseline_model", "build_cnn", "build_autoencoder"]

@@ -1,8 +1,0 @@
-{
-    "best_epoch": 13,
-    "best_val_loss": 0.10277725011110306,
-    "final_train_loss": 0.10029911994934082,
-    "final_val_loss": 0.22246381640434265,
-    "final_train_accuracy": 0.958791196346283,
-    "final_val_accuracy": 0.9340659379959106
-}

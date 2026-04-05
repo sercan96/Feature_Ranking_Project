@@ -51,3 +51,25 @@ AUTOENCODER_MODEL_DIR = BASE_DIR / "models" / "autoencoder"
 def get_raw_data_path(dataset_name: str = "breast_cancer_data.csv") -> Path:
     """Verilen veri seti ismine göre raw klasöründeki tam yolu döndürür."""
     return BASE_DIR / "data" / "raw" / dataset_name
+
+from pathlib import Path
+
+BASE_OUTPUT_DIR = Path("outputs")
+
+
+def get_model_output_dir(model_name: str, dataset_name: str = "breast_cancer_data", subfolder: str = "") -> Path:
+    """
+    Model çıktıları için yol oluştur.
+    
+    Örnekler:
+    - get_model_output_dir("cnn", "breast_cancer_data") → outputs/cnn/breast_cancer_data
+    - get_model_output_dir("cnn", "breast_cancer_data", "reports") → outputs/cnn/breast_cancer_data/reports
+    - get_model_output_dir("cnn", "breast_cancer_data", "metrics") → outputs/cnn/breast_cancer_data/metrics
+    """
+    if subfolder:
+        output_dir = BASE_OUTPUT_DIR / model_name / dataset_name / subfolder
+    else:
+        output_dir = BASE_OUTPUT_DIR / model_name / dataset_name
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
