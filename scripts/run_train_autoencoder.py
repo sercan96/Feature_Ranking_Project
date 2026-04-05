@@ -2,6 +2,8 @@ import os
 import sys
 import numpy as np
 import pandas as pd
+import random
+import tensorflow as tf
 
 # Proje kökünü path'e ekle
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -10,7 +12,7 @@ from tensorflow.keras.callbacks import EarlyStopping
 
 from src.data_loader import load_data
 from src.preprocessing import preprocess_data
-from src.config import AUTOENCODER_MODEL_DIR
+from src.config import AUTOENCODER_MODEL_DIR, RANDOM_STATE
 from src.utils import ensure_dir, save_json
 from src.models import build_autoencoder
 
@@ -88,6 +90,11 @@ def save_first_encoder_weights(autoencoder, output_dir, layer_name="encoder_dens
 
 
 def main():
+    # Random seed set et - Reproducible results
+    np.random.seed(RANDOM_STATE)
+    random.seed(RANDOM_STATE)
+    tf.random.set_seed(RANDOM_STATE)
+    
     # 1. Veri yükleme
     df = load_data("breast_cancer_data.csv")
 

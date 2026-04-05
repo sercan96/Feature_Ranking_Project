@@ -20,6 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Veri yolları
 RAW_DATA_PATH = BASE_DIR / "data" / "raw" / "breast_cancer_data.csv"
+FILTERED_DATA_PATH = BASE_DIR / "data" / "filtered_datasets"
 PROCESSED_DATA_DIR = BASE_DIR / "data" / "processed"
 
 
@@ -48,11 +49,14 @@ BASELINE_MODEL_DIR = BASE_DIR / "models" / "baseline"
 CNN_MODEL_DIR = BASE_DIR / "models" / "cnn"
 AUTOENCODER_MODEL_DIR = BASE_DIR / "models" / "autoencoder"
 
-def get_data(dataset_name: str = "breast_cancer_data.csv",model_name: str ="", folder: str = "raw") -> Path:
+def get_data(dataset_name: str = "breast_cancer_data.csv", model_name: str = "", dataset_name_folder: str = "", folder: str = "raw") -> Path:
+
     if folder == "raw":
         return BASE_DIR / "data" / "raw" / dataset_name
     elif folder == "filtered_datasets":
-        return BASE_DIR / "filtered_datasets" / model_name / dataset_name
+        if not model_name or not dataset_name_folder:
+            raise ValueError("filtered_datasets için model_name ve dataset_name_folder parametreleri zorunludur.")
+        return BASE_DIR / "data" / "filtered_datasets" / model_name / dataset_name_folder / "reports" / dataset_name
     else:
         raise ValueError(f"Geçersiz folder: {folder}. 'raw' veya 'filtered_datasets' olmalı.")
 
@@ -62,14 +66,7 @@ BASE_OUTPUT_DIR = Path("outputs")
 
 
 def get_model_output_dir(model_name: str, dataset_name: str = "breast_cancer_data", subfolder: str = "") -> Path:
-    """
-    Model çıktıları için yol oluştur.
-    
-    Örnekler:
-    - get_model_output_dir("cnn", "breast_cancer_data") → outputs/cnn/breast_cancer_data
-    - get_model_output_dir("cnn", "breast_cancer_data", "reports") → outputs/cnn/breast_cancer_data/reports
-    - get_model_output_dir("cnn", "breast_cancer_data", "metrics") → outputs/cnn/breast_cancer_data/metrics
-    """
+
     if subfolder:
         output_dir = BASE_OUTPUT_DIR / model_name / dataset_name / subfolder
     else:

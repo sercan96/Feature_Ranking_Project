@@ -5,8 +5,8 @@ import pandas as pd
 from src.config import get_data
 
 
-def load_data(dataset_name: str = "breast_cancer_data.csv", folder: str = "raw") -> pd.DataFrame:
-    df = pd.read_csv(get_data(dataset_name, folder=folder))
+def load_data(dataset_name: str = "breast_cancer_data.csv", model_name: str = "", dataset_name_folder: str = "", folder: str = "raw") -> pd.DataFrame:
+    df = pd.read_csv(get_data(dataset_name, model_name=model_name, dataset_name_folder=dataset_name_folder, folder=folder))
     return df
 
 
