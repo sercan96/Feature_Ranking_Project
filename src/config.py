@@ -48,9 +48,13 @@ BASELINE_MODEL_DIR = BASE_DIR / "models" / "baseline"
 CNN_MODEL_DIR = BASE_DIR / "models" / "cnn"
 AUTOENCODER_MODEL_DIR = BASE_DIR / "models" / "autoencoder"
 
-def get_raw_data_path(dataset_name: str = "breast_cancer_data.csv") -> Path:
-    """Verilen veri seti ismine göre raw klasöründeki tam yolu döndürür."""
-    return BASE_DIR / "data" / "raw" / dataset_name
+def get_data(dataset_name: str = "breast_cancer_data.csv",model_name: str ="", folder: str = "raw") -> Path:
+    if folder == "raw":
+        return BASE_DIR / "data" / "raw" / dataset_name
+    elif folder == "filtered_datasets":
+        return BASE_DIR / "filtered_datasets" / model_name / dataset_name
+    else:
+        raise ValueError(f"Geçersiz folder: {folder}. 'raw' veya 'filtered_datasets' olmalı.")
 
 from pathlib import Path
 

@@ -2,21 +2,15 @@
 """
 
 import pandas as pd
-from src.config import get_raw_data_path
+from src.config import get_data
 
 
-def load_data(dataset_name: str = "breast_cancer_data.csv") -> pd.DataFrame:
-    """
-    Excel dosyasından breast cancer veri setini yükler. 
-    """
-    df = pd.read_csv(get_raw_data_path(dataset_name))
+def load_data(dataset_name: str = "breast_cancer_data.csv", folder: str = "raw") -> pd.DataFrame:
+    df = pd.read_csv(get_data(dataset_name, folder=folder))
     return df
 
 
 def basic_info(df: pd.DataFrame) -> None:
-    """
-    Veri setinin temel bilgilerini ekrana yazdırır.
-    """
     print("\n--- İlk 5 Satır ---")
     print(df.head())
 

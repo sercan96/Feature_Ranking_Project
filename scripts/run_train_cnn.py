@@ -111,7 +111,7 @@ def save_first_conv_kernels(model, feature_names, layer_name="feature_conv"):
 
 def main():
     # 1. Veri yükleme
-    df = load_data("breast_cancer_data.csv")
+    df = load_data("breast_cancer_data.csv", folder="raw")
 
     # 2. Preprocessing
     processed = preprocess_data(df)
