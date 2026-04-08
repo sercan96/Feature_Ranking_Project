@@ -21,32 +21,66 @@ from sklearn.preprocessing import StandardScaler
 from src.config import TARGET_COLUMN, ID_COLUMN, TEST_SIZE, RANDOM_STATE
 
 
-def drop_id_column(df: pd.DataFrame) -> pd.DataFrame:
+def drop_id_column(df: pd.DataFrame, id_column: str | None = ID_COLUMN) -> pd.DataFrame:
     """
     Eğer ID sütunu varsa veri setinden kaldırır.
     """
-    if ID_COLUMN in df.columns:
-        df = df.drop(columns=[ID_COLUMN])
+    if id_column and id_column in df.columns:
+        df = df.drop(columns=[id_column])
     return df
 
 #df["diagnosis"] = df["diagnosis"].map({"M": 1, "B": 0})
-def encode_target(df: pd.DataFrame) -> pd.DataFrame:
+def encode_target(df: pd.DataFrame, target_column: str = TARGET_COLUMN) -> pd.DataFrame:
     """
     diagnosis sütununu sayısal hale getirir.
     M -> 1
     B -> 0
     """
     df = df.copy()
-    df[TARGET_COLUMN] = df[TARGET_COLUMN].map({"M": 1, "B": 0})
+    if target_column not in df.columns:
+        raise ValueError(f"Target kolonu bulunamadı: {target_column}")
+
+    y = df[target_column]
+
+    if y.dtype == bool:
+        df[target_column] = y.astype(int)
+        return df
+
+    if pd.api.types.is_numeric_dtype(y):
+        unique_vals = set(pd.Series(y).dropna().unique().tolist())
+        if unique_vals.issubset({0, 1}):
+            return df
+        raise ValueError(
+            f"Target kolonu binary 0/1 değil: {target_column}. Bulunan değerler: {sorted(unique_vals)}"
+        )
+
+    y_str = y.astype(str).str.strip()
+    unique_labels = sorted(pd.Series(y_str).dropna().unique().tolist())
+
+    if set(unique_labels) == {"B", "M"}:
+        df[target_column] = y_str.map({"M": 1, "B": 0})
+        return df
+
+    if len(unique_labels) == 2:
+        label_map = {unique_labels[0]: 0, unique_labels[1]: 1}
+        df[target_column] = y_str.map(label_map)
+        return df
+
+    raise ValueError(
+        f"Target kolonu binary değil: {target_column}. Bulunan sınıf sayısı: {len(unique_labels)}"
+    )
     return df
 
 
-def split_features_target(df: pd.DataFrame):
+def split_features_target(df: pd.DataFrame, target_column: str = TARGET_COLUMN):
     """
     Girdi özelliklerini (X) ve hedef değişkeni (y) ayırır.
     """
-    X = df.drop(columns=[TARGET_COLUMN])
-    y = df[TARGET_COLUMN]
+    if target_column not in df.columns:
+        raise ValueError(f"Target kolonu bulunamadı: {target_column}")
+
+    X = df.drop(columns=[target_column])
+    y = df[target_column]
     return X, y
 
 
@@ -85,14 +119,14 @@ def reshape_for_cnn(X: np.ndarray):
     return X.reshape(X.shape[0], X.shape[1], 1)
 
 
-def preprocess_data(df: pd.DataFrame):
+def preprocess_data(df: pd.DataFrame, target_column: str = TARGET_COLUMN, id_column: str | None = ID_COLUMN):
     """
     Tüm preprocessing adımlarını sırasıyla uygular.
     """
-    df = drop_id_column(df)
-    df = encode_target(df)
+    df = drop_id_column(df, id_column=id_column)
+    df = encode_target(df, target_column=target_column)
 
-    X, y = split_features_target(df)
+    X, y = split_features_target(df, target_column=target_column)
     X_train, X_test, y_train, y_test = split_data(X, y)
     X_train_scaled, X_test_scaled, scaler = scale_data(X_train, X_test)
 
