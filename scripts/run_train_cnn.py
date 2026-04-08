@@ -1,6 +1,5 @@
 import os
 import sys
-from xml.parsers.expat import model
 import numpy as np
 import pandas as pd
 import random
@@ -19,7 +18,49 @@ from src.preprocessing import preprocess_data
 from src.evaluate import evaluate_classification_model
 from src.utils import ensure_dir, save_json
 from src.models import build_cnn
-from src.config import get_model_output_dir, RANDOM_STATE
+from src.config import get_model_output_dir, get_data, RANDOM_STATE
+from src.feature_selector import FeatureSelector, FeatureSelectionConfig
+
+
+def validate_feature_percent(feature_percent: float) -> float:
+    if feature_percent <= 0 or feature_percent > 100:
+        raise ValueError("feature-percent 0 ile 100 arasında olmalı (100 dahil).")
+    return feature_percent
+
+
+def calculate_top_k_from_percent(total_features: int, feature_percent: float) -> int:
+    selection_ratio = feature_percent / 100.0
+    return max(int(total_features * selection_ratio), 1)
+
+
+def create_filtered_feature_datasets(feature_percent: float) -> int:
+    base_dir = Path(__file__).resolve().parent.parent
+    ratio = feature_percent / 100.0
+
+    config = FeatureSelectionConfig(
+        dataset_path=str(get_data()),
+        ranking_max_path=str(get_model_output_dir("cnn", "breast_cancer_data", "reports") / "feature_weight_ranking_max.csv"),
+        ranking_avg_path=str(get_model_output_dir("cnn", "breast_cancer_data", "reports") / "feature_weight_ranking_avg.csv"),
+        output_dir=str(base_dir / "data" / "filtered_datasets" / "cnn" / "breast_cancer_data" / "reports"),
+        label_column="diagnosis",
+        excluded_columns=["id", "ID"],
+        selection_ratio=ratio,
+        min_features=1,
+    )
+
+    selector = FeatureSelector(config)
+    selector.load_files()
+    selector.create_both_datasets()
+
+    total_features = len(selector._get_feature_columns())
+    top_k = calculate_top_k_from_percent(total_features, feature_percent)
+
+    print("\n--- Filtered Dataset Uretimi ---")
+    print(f"Secilen oran: %{feature_percent}")
+    print(f"Toplam feature: {total_features}")
+    print(f"Secilen feature sayisi (top_k): {top_k}")
+
+    return top_k
 
 def extract_feature_scores_from_first_conv(model, layer_name="feature_conv"):
     """
@@ -113,7 +154,12 @@ def save_first_conv_kernels(model, feature_names, output_dir_name="breast_cancer
     return df_kernels, df_max_scores, df_avg_scores
 
 
-def main(mode="original"):
+def main(mode="original", feature_percent=20.0, ranking_type="avg"):
+
+    feature_percent = validate_feature_percent(feature_percent)
+    ranking_type = ranking_type.lower()
+    if ranking_type not in {"avg", "max"}:
+        raise ValueError("ranking-type sadece 'avg' veya 'max' olabilir.")
 
     np.random.seed(RANDOM_STATE)
     random.seed(RANDOM_STATE)
@@ -130,9 +176,16 @@ def main(mode="original"):
         df = load_data("breast_cancer_data.csv", folder="raw")
         output_prefix = "breast_cancer_data"
     elif mode == "filtered":
+        raw_df = load_data("breast_cancer_data.csv", folder="raw")
+        excluded_columns_for_count = {"diagnosis", "target", "label", "class", "Unnamed: 0", "id", "ID"}
+        total_features = len([c for c in raw_df.columns if c not in excluded_columns_for_count])
+        expected_top_k = calculate_top_k_from_percent(total_features, feature_percent)
+        filtered_file_name = f"breast_cancer_data_top_{expected_top_k}_{ranking_type}_features.csv"
+
         print("\n" + "="*80)
         print("="*80 + "\n")
-        df = load_data("breast_cancer_data_top_6_avg_features.csv", "cnn", "breast_cancer_data", folder="filtered_datasets")
+        print(f"[FILTERED MODE] Yuklenecek dosya: {filtered_file_name}")
+        df = load_data(filtered_file_name, "cnn", "breast_cancer_data", folder="filtered_datasets")
         output_prefix = "breast_cancer_data_filtered"
     else:
         raise ValueError("Mode 'original' veya 'filtered' olmalı.")
@@ -153,8 +206,8 @@ def main(mode="original"):
     print("Channel sayısı     :", X_train.shape[2])
     
     # Feature sayısını kontrol et - Filtrelenmiş modda 6 feature olmalı
-    if mode == "filtered" and X_train.shape[1] != 6:
-        print(f"\n  UYARI: Filtrelenmiş modda 6 feature bekleniyor ama {X_train.shape[1]} feature bulundu!")
+    if mode == "filtered" and X_train.shape[1] != expected_top_k:
+        print(f"\n  UYARI: Filtrelenmiş modda {expected_top_k} feature bekleniyor ama {X_train.shape[1]} feature bulundu!")
         print("Lütfen filtered_datasets/cnn/breast_cancer_data/reports/ klasöründeki CSV dosyalarını kontrol edin.")
     elif mode == "original" and X_train.shape[1] != 31:
         print(f"\n  UYARI: Original modda 31 feature bekleniyor ama {X_train.shape[1]} feature bulundu!")
@@ -243,7 +296,7 @@ def main(mode="original"):
         print(f"{key}: {value:.4f}")
 
     if mode == "filtered":
-        metrics_path = Path("outputs") / "cnn" / "breast_cancer_data_filtered_metrics" / "AVG_test_metrics.json"
+        metrics_path = Path("outputs") / "cnn" / "breast_cancer_data_filtered_metrics" / f"{ranking_type.upper()}_test_metrics.json"
         metrics_path.parent.mkdir(parents=True, exist_ok=True)
     else:
         metrics_path = get_model_output_dir("cnn", output_prefix, "metrics") / "org_test_metrics.json"
@@ -294,13 +347,21 @@ def main(mode="original"):
         print(feature_order_avg)
 
         print("\nCNN modeli eğitildi ve kernel-weight tabanlı feature ranking dosyaları oluşturuldu.")
+
+        top_k = create_filtered_feature_datasets(feature_percent)
+        print(f"\n✓ %{feature_percent} secimi ile filtered datasetler uretildi (top_{top_k}).")
     else:
         print("\n" + "="*80)
         print("[FILTERED MODE] Tamamlandı!")
-        print("✓ Test metriği şuraya kaydedildi: outputs/cnn/breast_cancer_data_filtered_metrics/test_metrics.json")
+        print(f"✓ Test metrigi suraya kaydedildi: outputs/cnn/breast_cancer_data_filtered_metrics/{ranking_type.upper()}_test_metrics.json")
         print("="*80)
 
 
 if __name__ == "__main__":
-    main(mode="original")
-    #main(mode="filtered")  
+    parser = argparse.ArgumentParser(description="CNN egitimi ve feature bazli filtreli dataset olusturma")
+    parser.add_argument("--mode", choices=["original", "filtered"], default="original", help="Calisma modu")
+    parser.add_argument("--feature-percent", type=float, default=20.0, help="Secilecek feature yuzdesi (or. 30)")
+    parser.add_argument("--ranking-type", choices=["avg", "max"], default="avg", help="Filtered modda hangi ranking dosyasi kullanilsin")
+
+    args = parser.parse_args()
+    main(mode=args.mode, feature_percent=args.feature_percent, ranking_type=args.ranking_type)
