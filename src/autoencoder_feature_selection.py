@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import math
 from pathlib import Path
 
 import numpy as np
@@ -38,7 +39,7 @@ def save_top_percent_features_by_abs_max_weight(
         lambda s: max(abs(x) for x in ast.literal_eval(s))
     )
     total_features = len(weight_df)
-    top_k = max(int(total_features * (feature_percent / 100.0)), 1)
+    top_k = max(math.ceil(total_features * (feature_percent / 100.0)), 1)
 
     feature_to_name = {f"F{i+1}": feature_names[i] for i in range(total_features)}
 
