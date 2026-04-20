@@ -47,12 +47,9 @@ def encode_target(df: pd.DataFrame, target_column: str = TARGET_COLUMN) -> pd.Da
         return df
 
     if pd.api.types.is_numeric_dtype(y):
-        unique_vals = set(pd.Series(y).dropna().unique().tolist())
-        if unique_vals.issubset({0, 1}):
-            return df
-        raise ValueError(
-            f"Target kolonu binary 0/1 değil: {target_column}. Bulunan değerler: {sorted(unique_vals)}"
-        )
+        # Sayısal target'ta sınıfları olduğu gibi koru; sadece int'e çevir.
+        df[target_column] = y.astype(int)
+        return df
 
     y_str = y.astype(str).str.strip()
     unique_labels = sorted(pd.Series(y_str).dropna().unique().tolist())
@@ -61,14 +58,8 @@ def encode_target(df: pd.DataFrame, target_column: str = TARGET_COLUMN) -> pd.Da
         df[target_column] = y_str.map({"M": 1, "B": 0})
         return df
 
-    if len(unique_labels) == 2:
-        label_map = {unique_labels[0]: 0, unique_labels[1]: 1}
-        df[target_column] = y_str.map(label_map)
-        return df
-
-    raise ValueError(
-        f"Target kolonu binary değil: {target_column}. Bulunan sınıf sayısı: {len(unique_labels)}"
-    )
+    label_map = {label: idx for idx, label in enumerate(unique_labels)}
+    df[target_column] = y_str.map(label_map).astype(int)
     return df
 
 
@@ -82,6 +73,30 @@ def split_features_target(df: pd.DataFrame, target_column: str = TARGET_COLUMN):
     X = df.drop(columns=[target_column])
     y = df[target_column]
     return X, y
+
+
+def keep_numeric_features_only(X: pd.DataFrame) -> pd.DataFrame:
+    """
+    Sayısal olmayan feature kolonlarını otomatik olarak çıkarır.
+    Örn: sample_id gibi string kolonlar.
+    """
+    X_numeric = X.apply(pd.to_numeric, errors="coerce")
+
+    all_nan_cols = [col for col in X_numeric.columns if X_numeric[col].isna().all()]
+    if all_nan_cols:
+        X_numeric = X_numeric.drop(columns=all_nan_cols)
+
+    if X_numeric.shape[1] == 0:
+        raise ValueError("Sayısal feature kolonu bulunamadı. Data dosyasını kontrol edin.")
+
+    if X_numeric.isna().any().any():
+        nan_cols = [col for col in X_numeric.columns if X_numeric[col].isna().any()]
+        raise ValueError(
+            "Bazı feature kolonları kısmen sayısal değil. "
+            f"Lütfen bu kolonları temizleyin veya kaldırın: {nan_cols[:10]}"
+        )
+
+    return X_numeric
 
 
 def split_data(X: pd.DataFrame, y: pd.Series):
@@ -127,6 +142,7 @@ def preprocess_data(df: pd.DataFrame, target_column: str = TARGET_COLUMN, id_col
     df = encode_target(df, target_column=target_column)
 
     X, y = split_features_target(df, target_column=target_column)
+    X = keep_numeric_features_only(X)
     X_train, X_test, y_train, y_test = split_data(X, y)
     X_train_scaled, X_test_scaled, scaler = scale_data(X_train, X_test)
 

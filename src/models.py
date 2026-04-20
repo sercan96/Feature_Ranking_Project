@@ -27,7 +27,7 @@ def build_baseline_model():
 
 
 #CNN modeli oluşturma fonksiyonu
-def build_cnn(input_shape):
+def build_cnn(input_shape, num_classes=2):
     """
     Basit ve açıklanabilir CNN modeli.
     İlk Conv1D katmanı kernel_size=1 olduğu için feature ranking daha yorumlanabilir hale gelir.
@@ -74,7 +74,11 @@ def build_cnn(input_shape):
 
     x = GlobalAveragePooling1D()(x)
     x = Dropout(0.2)(x)
-    outputs = Dense(1, activation="sigmoid", name="output_layer")(x)
+
+    if num_classes == 2:
+        outputs = Dense(1, activation="sigmoid", name="output_layer")(x)
+    else:
+        outputs = Dense(num_classes, activation="softmax", name="output_layer")(x)
 
     model = Model(inputs=inputs, outputs=outputs, name="feature_ranking_cnn")
     return model
@@ -106,4 +110,52 @@ def build_autoencoder(input_dim=30, encoding_dim=8):
     return autoencoder, encoder
 
 
-__all__ = ["build_baseline_model", "build_cnn", "build_autoencoder"]
+def build_sigmoid_autoencoder(input_dim=30, encoding_dim=8):
+    """
+    Sigmoid aktivasyonlu autoencoder ve encoder modeli.
+    run_autoencoder scripti için merkezi model tanımı.
+    """
+    input_layer = Input(shape=(input_dim,), name="input_layer")
+
+    encoded_hidden = Dense(16, activation="sigmoid", name="enc_dense_1")(input_layer)
+    encoded = Dense(encoding_dim, activation="sigmoid", name="enc_dense_2")(encoded_hidden)
+
+    decoded_hidden = Dense(16, activation="sigmoid", name="dec_dense_1")(encoded)
+    decoded = Dense(input_dim, activation="sigmoid", name="dec_output")(decoded_hidden)
+
+    autoencoder = Model(inputs=input_layer, outputs=decoded, name="autoencoder")
+    encoder = Model(inputs=input_layer, outputs=encoded, name="encoder")
+
+    autoencoder.compile(
+        optimizer=Adam(learning_rate=0.001),
+        loss="mse"
+    )
+
+    return autoencoder, encoder
+
+
+def build_latent_classifier(input_dim):
+    """
+    Encoder çıktısı üzerinde çalışan basit binary classifier modeli.
+    """
+    classifier_input = Input(shape=(input_dim,), name="classifier_input")
+    x = Dense(8, activation="sigmoid", name="classifier_dense_1")(classifier_input)
+    classifier_output = Dense(1, activation="sigmoid", name="classifier_output")(x)
+
+    classifier = Model(inputs=classifier_input, outputs=classifier_output, name="latent_classifier")
+    classifier.compile(
+        optimizer=Adam(learning_rate=0.001),
+        loss="binary_crossentropy",
+        metrics=["accuracy"]
+    )
+
+    return classifier
+
+
+__all__ = [
+    "build_baseline_model",
+    "build_cnn",
+    "build_autoencoder",
+    "build_sigmoid_autoencoder",
+    "build_latent_classifier",
+]

@@ -37,6 +37,25 @@ CNN Çalışma Sistemi :
 
     Bu projede önce veriyi yükleyip CNN modelini kurduk. Model, birden fazla convolution katmanı kullanarak sınıflandırma problemini öğrendi. Eğitim tamamlandıktan sonra feature importance’ı activations’tan değil, doğrudan ilk convolution katmanının kernel ağırlıklarından çıkardık. İlk conv katmanının kernel matrisi feature × filter biçiminde tabloya dönüştürüldü. Ardından her feature için filtreler arasındaki maksimum ve ortalama mutlak ağırlık hesaplandı. Bu skorlar kullanılarak feature’lar büyükten küçüğe sıralandı ve feature ranking dosyaları oluşturuldu.
 
+Train Mantığı :
+    Bu script iki farklı modda çalışıyor:
+
+    original mode
+        Orijinal veri setini yükler, preprocess eder, autoencoder eğitir, test metriğini hesaplar, encoder ağırlıklarından feature ranking çıkarır, sonra bu ranking’e göre filtrelenmiş yeni datasetler üretir.
+    filtered mode
+        Daha önce oluşturulmuş filtrelenmiş datasetlerden birini yükler, tekrar preprocess eder, autoencoder’ı o filtrelenmiş veri üzerinde çalıştırır ve test metriğini hesaplar.
+
+    Yani mantık şu:
+
+    1.Ham veriyle autoencoder eğit
+    2.İlk encoder katmanının ağırlıklarına bak
+    3.Hangi feature daha “güçlü” katkı veriyor diye sırala
+    4.En iyi yüzde kaç feature isteniyorsa seç
+    5.Yeni CSV üret
+    
+
+
+
 AutoEncoder Çalışma Mantığı :
 
     x→Encoder→z→Decoder→x^ (Mantığı)
@@ -51,11 +70,11 @@ AutoEncoder Çalışma Mantığı :
     Decoder: bu özeti kullanıp giriş veriyi tekrar üretmeye çalışır
 
     Örnek:
-        girişte 30 feature var
-        encoder bunu 16’ya indirir
-        sonra 8’e indirir
-        decoder tekrar 16’ya çıkarır
-        sonra yeniden 30 feature üretir
+        Girişte 30 feature var
+        Encoder bunu 16’ya indirir
+        Sonra 8’e indirir
+        Decoder tekrar 16’ya çıkarır
+        Sonra yeniden 30 feature üretir
 
     Burada modelin amacı sınıf tahmini değil,input’u yeniden üretmek
 
@@ -80,3 +99,37 @@ CNN ranking’i ise daha çok şunu söyler:
 
     “Bu feature sınıflandırma için ne kadar etkili?
 
+K-means ile Cluster Ayarlama : 
+
+    Feature’ları CNN’den elde edilen ağırlık temsillerine göre K-Means ile cluster’la.
+    Sonra her cluster içindeki feature’lar arasından, importance skoru en yüksek olan tek bir feature seç.
+    Böylece hem önemli hem de birbirinden farklı feature’lardan oluşan yeni bir feature set elde et.
+    Weight-based representation + K-Means ile cluster bazlı temsilci feature seçimi:
+    1.Her feature için Conv kernel temsili alınıyor.
+    2.K-Means ile cluster’a ayrılıyor.
+    3.Seçtiğiniz ranking tipine göre importance hesaplanıyor:
+    4.max: cluster_select_representative_features içinde max abs kernel ağırlığı
+    5.avg: cluster_select_representative_features içinde mean abs kernel ağırlığı
+    6.Her cluster’dan en yüksek importance feature seçiliyor. (Exp. count = 3 3 cluster )
+
+
+    AUTOENCODER: 
+        Original :
+        python scripts/run_autoencoder.py --dataset-name heart_disease_data.csv --target-column target --id-column none --encoding-dim 8
+        Filtered :
+        python scripts/run_autoencoder.py --dataset-name breast_cancer_data.csv --target-column diagnosis --id-column none --feature-percent 20
+    
+    "feature_percent": 20.0,
+    "selected_feature_count": 6,
+    "test_mse": 0.5953885912895203,
+    "test_accuracy": 0.9122807017543859,
+    "threshold": 0.5
+
+    Purpose: 
+    1.Veriyi yüklemek ve ön işlemek
+    2.Autoencoder eğitmek
+    3.Encoder çıktılarıyla bir sınıflandırıcı eğitmek
+    4.İlk katmandaki ağırlıklardan feature önemini çıkarmak
+    5.En iyi feature’ları seçip yeni bir veri seti oluşturmak
+    6.Bu filtrelenmiş veri setiyle aynı süreci tekrar çalıştırmak
+    7.Eski ve yeni sonuçları dosyaya kaydetmek

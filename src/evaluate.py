@@ -23,17 +23,25 @@ def evaluate_classification_model(model, X_test, y_test, model_name="model"):
     """
     Sınıflandırma modelini değerlendirir ve metrikleri döndürür.
     """
-    y_pred = model.predict(X_test)
+    y_prob = model.predict(X_test)
 
-    # Convert y_pred to binary values
-    y_pred = (y_pred > 0.5).astype(int)
-
-    metrics = {
-        "accuracy": accuracy_score(y_test, y_pred),
-        "precision": precision_score(y_test, y_pred),
-        "recall": recall_score(y_test, y_pred),
-        "f1_score": f1_score(y_test, y_pred),
-    }
+    # Binary: (N, 1) olasılık çıktısı. Multiclass: (N, C) softmax çıktısı.
+    if len(y_prob.shape) == 1 or (len(y_prob.shape) == 2 and y_prob.shape[1] == 1):
+        y_pred = (y_prob.reshape(-1) > 0.5).astype(int)
+        metrics = {
+            "accuracy": accuracy_score(y_test, y_pred),
+            "precision": precision_score(y_test, y_pred, zero_division=0),
+            "recall": recall_score(y_test, y_pred, zero_division=0),
+            "f1_score": f1_score(y_test, y_pred, zero_division=0),
+        }
+    else:
+        y_pred = y_prob.argmax(axis=1)
+        metrics = {
+            "accuracy": accuracy_score(y_test, y_pred),
+            "precision": precision_score(y_test, y_pred, average="weighted", zero_division=0),
+            "recall": recall_score(y_test, y_pred, average="weighted", zero_division=0),
+            "f1_score": f1_score(y_test, y_pred, average="weighted", zero_division=0),
+        }
 
     print(f"\n--- {model_name} Classification Report ---")
     print(classification_report(y_test, y_pred))
