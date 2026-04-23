@@ -39,16 +39,39 @@ def set_reproducible(seed: int) -> None:
 		pass
 
 
+def parse_random_state(value: str | None) -> int | None:
+	if value is None:
+		return RANDOM_STATE
+	text = str(value).strip().lower()
+	if text in {"none", "null", "random", "-"}:
+		return None
+	return int(text)
+
+
 def save_feature_weighted_lists(autoencoder, X_train: np.ndarray, feature_names: list[str], output_path: Path) -> None:
 	"""
 	Her feature icin bagli oldugu nöronlara sample-bazli katkı listesi uretir:
 	contribution_list_i[j] = mean_s( abs(x_s,i * w_i,j) )
 	"""
-	weights = autoencoder.get_layer("enc_dense_1").get_weights()[0]  # (n_features, n_neurons)
+	first_encoder_layer = None
+	for layer_name in ("enc_dense_1", "encoder_dense_1"):
+		try:
+			first_encoder_layer = autoencoder.get_layer(layer_name)
+			break
+		except ValueError:
+			continue
+
+	if first_encoder_layer is None:
+		raise ValueError(
+			"Encoder ilk katmanı bulunamadı. Beklenen isimler: 'enc_dense_1' veya 'encoder_dense_1'. "
+			f"Mevcut katmanlar: {[layer.name for layer in autoencoder.layers]}"
+		)
+
+	weights = first_encoder_layer.get_weights()[0]  # (n_features, n_neurons)
 	if X_train.ndim != 2:
 		raise ValueError(f"X_train 2 boyutlu olmali, gelen shape: {X_train.shape}")
 
-	if weights.shape[0] != X_train.shape[1]:
+	if weights.shape[0] != X_train.shape[1]: # Ağırlık(Satır sayısı) = Feature sayısı
 		raise ValueError(
 			f"X_train feature boyutu ({X_train.shape[1]}) ile agirlik satir sayisi ({weights.shape[0]}) eslesmiyor."
 		)
@@ -137,8 +160,10 @@ def main(
 	id_column: str | None = "ID",
 	encoding_dim: int = 8,
 	feature_percent: float = 50.0,
+	random_state: int | None = RANDOM_STATE,
 ) -> None:
-	set_reproducible(RANDOM_STATE)
+	if random_state is not None:
+		set_reproducible(random_state)
 	feature_percent = validate_feature_percent(feature_percent)
 	id_column = normalize_id_column(id_column)
 
@@ -148,7 +173,12 @@ def main(
 	print(f"[INFO] Veri yukleniyor: {dataset_filename}")
 	df = load_data(dataset_filename, folder="raw", target_column=target_column)
 
-	processed = preprocess_data(df, target_column=target_column, id_column=id_column)
+	processed = preprocess_data(
+		df,
+		target_column=target_column,
+		id_column=id_column,
+		random_state=random_state,
+	)
 	X_train_raw = processed["X_train"]
 	X_train, X_test, y_train, y_test = unpack_processed_arrays(processed)
 
@@ -193,7 +223,12 @@ def main(
 	)
 
 	filtered_train_df = pd.read_csv(filtered_dataset_path)
-	processed_filtered = preprocess_data(filtered_train_df, target_column=target_column, id_column=id_column)
+	processed_filtered = preprocess_data(
+		filtered_train_df,
+		target_column=target_column,
+		id_column=id_column,
+		random_state=random_state,
+	)
 	X_train_filtered, X_test_filtered, y_train_filtered, y_test_filtered = unpack_processed_arrays(processed_filtered)
 	filtered_test_mse, filtered_test_accuracy, _, _ = train_and_evaluate_pipeline(
 		X_train_filtered,
@@ -244,6 +279,7 @@ if __name__ == "__main__":
 	parser.add_argument("--id-column", type=str, default="ID", help="ID kolon adi, kullanmak istemezsen 'none' ver")
 	parser.add_argument("--encoding-dim", type=int, default=8, help="Encoding boyutu")
 	parser.add_argument("--feature-percent", type=float, default=20.0, help="Secilecek feature yuzdesi")
+	parser.add_argument("--random-state", type=str, default=str(RANDOM_STATE), help="Sabit tohum icin sayi ver. Rastgele icin 'none' ver")
 
 
 	args = parser.parse_args()
@@ -253,4 +289,5 @@ if __name__ == "__main__":
 		id_column=args.id_column,
 		encoding_dim=args.encoding_dim,
 		feature_percent=args.feature_percent,
+		random_state=parse_random_state(args.random_state),
 	)

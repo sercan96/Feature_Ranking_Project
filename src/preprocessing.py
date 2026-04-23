@@ -75,31 +75,55 @@ def split_features_target(df: pd.DataFrame, target_column: str = TARGET_COLUMN):
     return X, y
 
 
+def sanitize_mixed_type_features(X: pd.DataFrame) -> pd.DataFrame:
+    """
+    String formatta gelen sayisal degerleri temizleyip sayisala cevirir.
+    - Virgullu ondaliklari noktaya cevirir (1,23 -> 1.23)
+    - Bos/metin bozugu degerleri NaN yapar
+    - Tamami NaN olan kolonlari atar
+    - Kalan NaN degerleri kolon medyani ile doldurur
+    """
+    X_clean = X.copy()
+
+    for col in X_clean.columns:
+        series = X_clean[col]
+        if pd.api.types.is_numeric_dtype(series):
+            continue
+
+        s = series.astype(str).str.strip()
+        s = s.replace({"": np.nan, "nan": np.nan, "None": np.nan, "NA": np.nan, "N/A": np.nan, "?": np.nan})
+        s = s.str.replace(",", ".", regex=False)
+        X_clean[col] = pd.to_numeric(s, errors="coerce")
+
+    # Sayisal gorunen tiplerde de kalan metin olabilir; son bir coercion uygula.
+    X_clean = X_clean.apply(pd.to_numeric, errors="coerce")
+
+    all_nan_cols = [col for col in X_clean.columns if X_clean[col].isna().all()]
+    if all_nan_cols:
+        X_clean = X_clean.drop(columns=all_nan_cols)
+
+    if X_clean.shape[1] == 0:
+        raise ValueError("Sayısal feature kolonu bulunamadı. Data dosyasını kontrol edin.")
+
+    if X_clean.isna().any().any():
+        X_clean = X_clean.fillna(X_clean.median(numeric_only=True))
+
+    # Nadir durumda median da NaN kalirsa 0 ile tamamla.
+    if X_clean.isna().any().any():
+        X_clean = X_clean.fillna(0.0)
+
+    return X_clean
+
+
 def keep_numeric_features_only(X: pd.DataFrame) -> pd.DataFrame:
     """
     Sayısal olmayan feature kolonlarını otomatik olarak çıkarır.
     Örn: sample_id gibi string kolonlar.
     """
-    X_numeric = X.apply(pd.to_numeric, errors="coerce")
-
-    all_nan_cols = [col for col in X_numeric.columns if X_numeric[col].isna().all()]
-    if all_nan_cols:
-        X_numeric = X_numeric.drop(columns=all_nan_cols)
-
-    if X_numeric.shape[1] == 0:
-        raise ValueError("Sayısal feature kolonu bulunamadı. Data dosyasını kontrol edin.")
-
-    if X_numeric.isna().any().any():
-        nan_cols = [col for col in X_numeric.columns if X_numeric[col].isna().any()]
-        raise ValueError(
-            "Bazı feature kolonları kısmen sayısal değil. "
-            f"Lütfen bu kolonları temizleyin veya kaldırın: {nan_cols[:10]}"
-        )
-
-    return X_numeric
+    return sanitize_mixed_type_features(X)
 
 
-def split_data(X: pd.DataFrame, y: pd.Series):
+def split_data(X: pd.DataFrame, y: pd.Series, random_state: int | None = RANDOM_STATE):
     """
     Veriyi train ve test olarak böler.
     stratify=y kullanarak sınıf dağılımını korur.
@@ -108,7 +132,7 @@ def split_data(X: pd.DataFrame, y: pd.Series):
         X,
         y,
         test_size=TEST_SIZE,
-        random_state=RANDOM_STATE,
+        random_state=random_state,
         stratify=y # %63 benign %37 malignant ise train ve testte de buna yakın oran korunur. 
     )
     return X_train, X_test, y_train, y_test
@@ -134,7 +158,12 @@ def reshape_for_cnn(X: np.ndarray):
     return X.reshape(X.shape[0], X.shape[1], 1)
 
 
-def preprocess_data(df: pd.DataFrame, target_column: str = TARGET_COLUMN, id_column: str | None = ID_COLUMN):
+def preprocess_data(
+    df: pd.DataFrame,
+    target_column: str = TARGET_COLUMN,
+    id_column: str | None = ID_COLUMN,
+    random_state: int | None = RANDOM_STATE,
+):
     """
     Tüm preprocessing adımlarını sırasıyla uygular.
     """
@@ -143,7 +172,7 @@ def preprocess_data(df: pd.DataFrame, target_column: str = TARGET_COLUMN, id_col
 
     X, y = split_features_target(df, target_column=target_column)
     X = keep_numeric_features_only(X)
-    X_train, X_test, y_train, y_test = split_data(X, y)
+    X_train, X_test, y_train, y_test = split_data(X, y, random_state=random_state)
     X_train_scaled, X_test_scaled, scaler = scale_data(X_train, X_test)
 
     X_train_cnn = reshape_for_cnn(X_train_scaled)

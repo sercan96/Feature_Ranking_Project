@@ -80,17 +80,19 @@ def _build_label_filename(dataset_name: str) -> str:
 
 def _read_csv_flexible(path, is_feature_file: bool = False) -> pd.DataFrame:
     try:
-        return pd.read_csv(path)
+        if is_feature_file:
+            df = pd.read_csv(path, header=None)
+            df.columns = [f"feature_{i+1}" for i in range(df.shape[1])]
+            return df
+
+        return pd.read_csv(path, header=None)
     except ParserError:
         # Fallback: bazı dosyalar ';' ayraç ve ',' ondalık ile geliyor.
         if is_feature_file:
-            df = pd.read_csv(path, sep=';', decimal=',', header='infer')
-            # Header satırı yoksa ilk satır kolon adı gibi okunmuş olur; düzelt.
-            if _are_all_columns_numeric_like(df.columns):
-                df = pd.read_csv(path, sep=';', decimal=',', header=None)
-                df.columns = [f"feature_{i+1}" for i in range(df.shape[1])]
+            df = pd.read_csv(path, sep=';', decimal=',', header=None)
+            df.columns = [f"feature_{i+1}" for i in range(df.shape[1])]
         else:
-            df = pd.read_csv(path, sep=';', decimal=',', header='infer')
+            df = pd.read_csv(path, sep=';', decimal=',', header=None)
 
         _normalize_csv_to_comma(path, df)
         return df
