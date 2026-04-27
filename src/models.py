@@ -134,18 +134,43 @@ def build_sigmoid_autoencoder(input_dim=30, encoding_dim=8):
     return autoencoder, encoder
 
 
-def build_latent_classifier(input_dim):
+def build_latent_classifier(
+    input_dim,
+    num_classes=2,
+    hidden_units=(32, 16),
+    dropout_rates=None,
+    learning_rate=0.001,
+):
     """
-    Encoder çıktısı üzerinde çalışan basit binary classifier modeli.
+    Encoder çıktısı üzerinde çalışan classifier modeli.
+    - num_classes == 2: sigmoid + binary_crossentropy
+    - num_classes > 2 : softmax + sparse_categorical_crossentropy
     """
     classifier_input = Input(shape=(input_dim,), name="classifier_input")
-    x = Dense(8, activation="sigmoid", name="classifier_dense_1")(classifier_input)
-    classifier_output = Dense(1, activation="sigmoid", name="classifier_output")(x)
+    x = classifier_input
+
+    if not hidden_units:
+        raise ValueError("hidden_units en az bir katman icermeli.")
+
+    if dropout_rates is not None and len(dropout_rates) != len(hidden_units):
+        raise ValueError("dropout_rates uzunlugu hidden_units ile ayni olmali.")
+
+    for i, units in enumerate(hidden_units, start=1):
+        x = Dense(int(units), activation="relu", name=f"classifier_dense_{i}")(x)
+        if dropout_rates is not None and float(dropout_rates[i - 1]) > 0:
+            x = Dropout(float(dropout_rates[i - 1]), name=f"classifier_dropout_{i}")(x)
+
+    if num_classes == 2:
+        classifier_output = Dense(1, activation="sigmoid", name="classifier_output")(x)
+        loss = "binary_crossentropy"
+    else:
+        classifier_output = Dense(num_classes, activation="softmax", name="classifier_output")(x)
+        loss = "sparse_categorical_crossentropy"
 
     classifier = Model(inputs=classifier_input, outputs=classifier_output, name="latent_classifier")
     classifier.compile(
-        optimizer=Adam(learning_rate=0.001),
-        loss="binary_crossentropy",
+        optimizer=Adam(learning_rate=learning_rate),
+        loss=loss,
         metrics=["accuracy"]
     )
 

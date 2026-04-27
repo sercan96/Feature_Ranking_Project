@@ -23,13 +23,17 @@ from src.autoencoder_feature_selection import (
 )
 from src.utils import ensure_dir, save_json
 
-EPOCHS = 50
+AUTOENCODER_EPOCHS = 50
 BATCH_SIZE = 16
 CLASSIFIER_VALIDATION_SPLIT = 0.1
 THRESHOLD = 0.5
+DEFAULT_CLASSIFIER_EPOCHS = 50
+DEFAULT_CLASSIFIER_HIDDEN_UNITS = (32, 16)
 
 
-def set_reproducible(seed: int) -> None:
+def set_reproducible(seed: int | None) -> None:
+	if seed is None:
+		return
 	random.seed(seed)
 	np.random.seed(seed)
 	tf.keras.utils.set_random_seed(seed)
@@ -39,39 +43,16 @@ def set_reproducible(seed: int) -> None:
 		pass
 
 
-def parse_random_state(value: str | None) -> int | None:
-	if value is None:
-		return RANDOM_STATE
-	text = str(value).strip().lower()
-	if text in {"none", "null", "random", "-"}:
-		return None
-	return int(text)
-
-
 def save_feature_weighted_lists(autoencoder, X_train: np.ndarray, feature_names: list[str], output_path: Path) -> None:
 	"""
 	Her feature icin bagli oldugu nöronlara sample-bazli katkı listesi uretir:
 	contribution_list_i[j] = mean_s( abs(x_s,i * w_i,j) )
 	"""
-	first_encoder_layer = None
-	for layer_name in ("enc_dense_1", "encoder_dense_1"):
-		try:
-			first_encoder_layer = autoencoder.get_layer(layer_name)
-			break
-		except ValueError:
-			continue
-
-	if first_encoder_layer is None:
-		raise ValueError(
-			"Encoder ilk katmanı bulunamadı. Beklenen isimler: 'enc_dense_1' veya 'encoder_dense_1'. "
-			f"Mevcut katmanlar: {[layer.name for layer in autoencoder.layers]}"
-		)
-
-	weights = first_encoder_layer.get_weights()[0]  # (n_features, n_neurons)
+	weights = autoencoder.get_layer("enc_dense_1").get_weights()[0]  # (n_features, n_neurons)
 	if X_train.ndim != 2:
 		raise ValueError(f"X_train 2 boyutlu olmali, gelen shape: {X_train.shape}")
 
-	if weights.shape[0] != X_train.shape[1]: # Ağırlık(Satır sayısı) = Feature sayısı
+	if weights.shape[0] != X_train.shape[1]:
 		raise ValueError(
 			f"X_train feature boyutu ({X_train.shape[1]}) ile agirlik satir sayisi ({weights.shape[0]}) eslesmiyor."
 		)
@@ -102,11 +83,45 @@ def format_feature_percent_tag(feature_percent: float) -> str:
 	return str(feature_percent).replace(".", "_")
 
 
+def parse_hidden_units(units_text: str) -> tuple[int, ...]:
+	parts = [p.strip() for p in units_text.split(",") if p.strip()]
+	if not parts:
+		raise ValueError("classifier-hidden-units bos olamaz. Ornek: 128,64")
+	units = tuple(int(p) for p in parts)
+	if any(u <= 0 for u in units):
+		raise ValueError("classifier-hidden-units pozitif tam sayilar olmali.")
+	return units
+
+
+def parse_dropout_rates(dropout_text: str | None, layer_count: int) -> tuple[float, ...] | None:
+	if dropout_text is None:
+		return None
+	text = dropout_text.strip()
+	if text == "":
+		return None
+	parts = [p.strip() for p in text.split(",") if p.strip()]
+	dropouts = tuple(float(p) for p in parts)
+	if len(dropouts) != layer_count:
+		raise ValueError("classifier-dropout-rates uzunlugu, hidden katman sayisi ile ayni olmali.")
+	if any((d < 0.0 or d >= 1.0) for d in dropouts):
+		raise ValueError("dropout oranlari [0.0, 1.0) araliginda olmali.")
+	return dropouts
+
+
+def parse_random_state(random_state_text: str | None) -> int | None:
+	if random_state_text is None:
+		return RANDOM_STATE
+	text = random_state_text.strip().lower()
+	if text in {"none", "null", ""}:
+		return None
+	return int(random_state_text)
+
+
 def unpack_processed_arrays(processed: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 	X_train = processed["X_train_scaled"]
 	X_test = processed["X_test_scaled"]
-	y_train = processed["y_train"].to_numpy().astype(np.float32)
-	y_test = processed["y_test"].to_numpy().astype(np.float32)
+	y_train = processed["y_train"].to_numpy().astype(np.int32)
+	y_test = processed["y_test"].to_numpy().astype(np.int32)
 	return X_train, X_test, y_train, y_test
 
 
@@ -116,6 +131,10 @@ def train_and_evaluate_pipeline(
 	y_train: np.ndarray,
 	y_test: np.ndarray,
 	encoding_dim: int,
+	classifier_epochs: int,
+	classifier_hidden_units: tuple[int, ...],
+	classifier_dropout_rates: tuple[float, ...] | None,
+	classifier_learning_rate: float,
 ) -> tuple[float, float, tf.keras.Model, tf.keras.Model]:
 	autoencoder, encoder = build_sigmoid_autoencoder(
 		input_dim=X_train.shape[1],
@@ -126,7 +145,7 @@ def train_and_evaluate_pipeline(
 		X_train,
 		X_train,
 		validation_data=(X_test, X_test),
-		epochs=EPOCHS,
+		epochs=AUTOENCODER_EPOCHS,
 		batch_size=BATCH_SIZE,
 		shuffle=True,
 		verbose=1,
@@ -137,20 +156,39 @@ def train_and_evaluate_pipeline(
 	X_train_encoded = encoder.predict(X_train, verbose=0)
 	X_test_encoded = encoder.predict(X_test, verbose=0)
 
-	classifier = build_latent_classifier(input_dim=X_train_encoded.shape[1])
+	num_classes = int(np.unique(y_train).size)
+	classifier = build_latent_classifier(
+		input_dim=X_train_encoded.shape[1],
+		num_classes=num_classes,
+		hidden_units=classifier_hidden_units,
+		dropout_rates=classifier_dropout_rates,
+		learning_rate=classifier_learning_rate,
+	)
+
+
+	if num_classes == 2:
+		y_train_fit = y_train.astype(np.float32)
+	else:
+		y_train_fit = y_train.astype(np.int32)
 	classifier.fit(
 		X_train_encoded,
-		y_train,
-		epochs=EPOCHS,
+		y_train_fit,
+		epochs=classifier_epochs,
 		batch_size=BATCH_SIZE,
 		validation_split=CLASSIFIER_VALIDATION_SPLIT,
 		verbose=1,
 	)
 
 	y_pred_prob = classifier.predict(X_test_encoded, verbose=0)
-	y_pred = (y_pred_prob > THRESHOLD).astype(int).ravel()
-	test_accuracy = float(accuracy_score(y_test.astype(int), y_pred))
 
+	if(num_classes == 2):
+		y_pred = (y_pred_prob > THRESHOLD).astype(int).ravel()
+	else:
+		y_pred = np.argmax(y_pred_prob, axis=1)
+		
+	test_accuracy = float(accuracy_score(y_test.astype(int), y_pred))
+	print("num_classes:", num_classes)
+	print("classifier output shape:", classifier.output_shape)
 	return test_mse, test_accuracy, autoencoder, encoder
 
 
@@ -161,9 +199,16 @@ def main(
 	encoding_dim: int = 8,
 	feature_percent: float = 50.0,
 	random_state: int | None = RANDOM_STATE,
-) -> None:
-	if random_state is not None:
-		set_reproducible(random_state)
+	classifier_epochs: int = DEFAULT_CLASSIFIER_EPOCHS,
+	classifier_hidden_units: tuple[int, ...] = DEFAULT_CLASSIFIER_HIDDEN_UNITS,
+	classifier_dropout_rates: tuple[float, ...] | None = None,
+	classifier_learning_rate: float = 0.001,
+) -> tuple[float, float]:
+	set_reproducible(random_state)
+	if random_state is None:
+		print("[INFO] random_state: None (rastgele)")
+	else:
+		print(f"[INFO] random_state: {random_state} (sabit)")
 	feature_percent = validate_feature_percent(feature_percent)
 	id_column = normalize_id_column(id_column)
 
@@ -173,12 +218,7 @@ def main(
 	print(f"[INFO] Veri yukleniyor: {dataset_filename}")
 	df = load_data(dataset_filename, folder="raw", target_column=target_column)
 
-	processed = preprocess_data(
-		df,
-		target_column=target_column,
-		id_column=id_column,
-		random_state=random_state,
-	)
+	processed = preprocess_data(df, target_column=target_column, id_column=id_column, random_state=random_state)
 	X_train_raw = processed["X_train"]
 	X_train, X_test, y_train, y_test = unpack_processed_arrays(processed)
 
@@ -191,6 +231,10 @@ def main(
 		y_train,
 		y_test,
 		encoding_dim,
+		classifier_epochs,
+		classifier_hidden_units,
+		classifier_dropout_rates,
+		classifier_learning_rate,
 	)
 
 	output_dir = Path("outputs") / "autoencoder" / dataset_folder
@@ -223,12 +267,7 @@ def main(
 	)
 
 	filtered_train_df = pd.read_csv(filtered_dataset_path)
-	processed_filtered = preprocess_data(
-		filtered_train_df,
-		target_column=target_column,
-		id_column=id_column,
-		random_state=random_state,
-	)
+	processed_filtered = preprocess_data(filtered_train_df, target_column=target_column, id_column=id_column, random_state=random_state)
 	X_train_filtered, X_test_filtered, y_train_filtered, y_test_filtered = unpack_processed_arrays(processed_filtered)
 	filtered_test_mse, filtered_test_accuracy, _, _ = train_and_evaluate_pipeline(
 		X_train_filtered,
@@ -236,6 +275,10 @@ def main(
 		y_train_filtered,
 		y_test_filtered,
 		encoding_dim,
+		classifier_epochs,
+		classifier_hidden_units,
+		classifier_dropout_rates,
+		classifier_learning_rate,
 	)
 
 	save_json(
@@ -271,6 +314,7 @@ def main(
 	print(f"[OK] Top %{feature_percent} metrik dosyasi: {filtered_metrics_path}")
 	print(f"[OK] Output klasoru: {output_dir}")
 	print(f"[OK] Metrik dosyasi: {metrics_dir / 'ORG_test_metrics.json'}")
+	return test_accuracy, filtered_test_accuracy
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Basit autoencoder egitimi")
@@ -279,15 +323,52 @@ if __name__ == "__main__":
 	parser.add_argument("--id-column", type=str, default="ID", help="ID kolon adi, kullanmak istemezsen 'none' ver")
 	parser.add_argument("--encoding-dim", type=int, default=8, help="Encoding boyutu")
 	parser.add_argument("--feature-percent", type=float, default=20.0, help="Secilecek feature yuzdesi")
-	parser.add_argument("--random-state", type=str, default=str(RANDOM_STATE), help="Sabit tohum icin sayi ver. Rastgele icin 'none' ver")
+	parser.add_argument("--random-state", type=str, default=str(RANDOM_STATE), help="Random state. Ornek: 42 veya none")
+	parser.add_argument("--repeat-runs", type=int, default=1, help="Ayni deneyi kac kez calistiracagi")
+	parser.add_argument("--accuracy-list-txt", type=str, default="", help="Accuracy listesi txt cikti yolu (bos ise varsayilan yol kullanilir)")
+	parser.add_argument("--classifier-epochs", type=int, default=DEFAULT_CLASSIFIER_EPOCHS, help="Classifier epoch sayisi")
+	parser.add_argument("--classifier-hidden-units", type=str, default="32,16", help="Classifier gizli katman nöronlari. Ornek: 128,64")
+	parser.add_argument("--classifier-dropout-rates", type=str, default="", help="Classifier dropout oranlari. Ornek: 0.3,0.2")
+	parser.add_argument("--classifier-learning-rate", type=float, default=0.001, help="Classifier ogrenme orani")
 
 
 	args = parser.parse_args()
-	main(
-		dataset_name=args.dataset_name,
-		target_column=args.target_column,
-		id_column=args.id_column,
-		encoding_dim=args.encoding_dim,
-		feature_percent=args.feature_percent,
-		random_state=parse_random_state(args.random_state),
-	)
+	random_state = parse_random_state(args.random_state)
+	classifier_hidden_units = parse_hidden_units(args.classifier_hidden_units)
+	classifier_dropout_rates = parse_dropout_rates(args.classifier_dropout_rates, len(classifier_hidden_units))
+	if args.repeat_runs <= 0:
+		raise ValueError("repeat-runs pozitif tam sayi olmali.")
+	if args.classifier_epochs <= 0:
+		raise ValueError("classifier-epochs pozitif tam sayi olmali.")
+	if args.classifier_learning_rate <= 0:
+		raise ValueError("classifier-learning-rate pozitif olmali.")
+
+	accuracy_values: list[float] = []
+	if args.accuracy_list_txt.strip():
+		accuracy_txt_path = Path(args.accuracy_list_txt)
+	else:
+		dataset_folder = Path(args.dataset_name).stem
+		feature_percent_tag = format_feature_percent_tag(args.feature_percent)
+		accuracy_txt_path = Path("outputs") / "autoencoder" / dataset_folder / "metrics" / f"top_{feature_percent_tag}_accuracy_runs.txt"
+	ensure_dir(accuracy_txt_path.parent)
+
+	#50 kere çalıştırıyor.
+	for run_idx in range(1, args.repeat_runs + 1):
+		print(f"\n[INFO] Calisma {run_idx}/{args.repeat_runs} basladi.")
+		_, filtered_test_accuracy = main(
+			dataset_name=args.dataset_name,
+			target_column=args.target_column,
+			id_column=args.id_column,
+			encoding_dim=args.encoding_dim,
+			feature_percent=args.feature_percent,
+			random_state=random_state,
+			classifier_epochs=args.classifier_epochs,
+			classifier_hidden_units=classifier_hidden_units,
+			classifier_dropout_rates=classifier_dropout_rates,
+			classifier_learning_rate=args.classifier_learning_rate,
+		)
+		accuracy_values.append(float(filtered_test_accuracy))
+		accuracy_txt_path.write_text(str(accuracy_values), encoding="utf-8")
+
+	print(f"[OK] Accuracy listesi yazildi: {accuracy_txt_path}")
+	print(f"[OK] Accuracy dizisi: {accuracy_values}")

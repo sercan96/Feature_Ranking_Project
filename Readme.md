@@ -117,7 +117,9 @@ K-means ile Cluster Ayarlama :
         Original :
         python scripts/run_autoencoder.py --dataset-name heart_disease_data.csv --target-column target --id-column none 
         Filtered :
-        python scripts/run_autoencoder.py --dataset-name breast_cancer_data.csv --target-column diagnosis --id-column none --feature-percent 30
+        python scripts/run_autoencoder.py --dataset-name breast_cancer_data.csv --target-column diagnosis --id-column none --feature-percent 30 --random-seed 42 
+        50 kere çalıştır :
+        python scripts/run_autoencoder.py --dataset-name breast_cancer_data.csv --target-column diagnosis --id-column none --feature-percent 30 --random-seed none --repeat-runs 50
     
     "feature_percent": 20.0,
     "selected_feature_count": 6,
